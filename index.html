@@ -17,6 +17,14 @@ button.main{background:var(--ac);color:#fff;border-color:var(--ac)}
 button:disabled{opacity:.5;cursor:default}
 input[type=number]{width:110px}
 label,.hint{color:var(--mut)}.hint{font-size:12px}
+#f{display:none}
+h1.app{font-size:20px;margin:0}
+.note{background:var(--pan);border:1px solid var(--bd);border-left:4px solid var(--ac);border-radius:6px;padding:9px 12px;font-size:13px;margin:10px 0}
+.pick{display:inline-flex;align-items:center;gap:8px;background:var(--ac);color:#fff;padding:11px 20px;border-radius:8px;cursor:pointer;font-weight:700;font-size:15px}
+.pick:hover{filter:brightness(1.12)}
+.pick.drag{outline:3px solid var(--ac);outline-offset:2px;filter:brightness(1.12)}
+button.sample{background:var(--pan);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;font-weight:600}
+button.sample:hover{border-color:var(--ac);color:var(--ac)}
 #tl{overflow-x:auto;border:1px solid var(--bd);border-radius:8px;background:var(--pan)}
 #in{position:relative;height:150px;cursor:pointer}
 #vp{position:sticky;left:0;height:150px}
@@ -26,7 +34,15 @@ canvas{display:block;width:100%;height:75px}
 #ph{position:absolute;top:0;bottom:0;width:2px;background:var(--ph);pointer-events:none;z-index:2}
 </style></head>
 <body><div class="wrap">
-<div class="row"><input type="file" id="f" accept="video/mp4,.mp4"><span id="st" class="hint">MP4ファイルを選んでください</span></div>
+<div class="row" style="margin-bottom:0"><h1 class="app">音ズレ補正 <span class="hint" style="font-size:12px">MP4の音声のズレ（一定のずれ／だんだん広がるずれ）を直すツール</span></h1></div>
+<p class="note">🔒 ファイルはあなたのブラウザの中だけで処理されます。動画がサーバーに送信されることはありません。</p>
+<div class="row">
+ <input type="file" id="f" accept="video/mp4,.mp4">
+ <label class="pick" id="pick" for="f">📁 MP4ファイルを選ぶ（ドロップでもOK）</label>
+ <button class="sample" id="s1">▶ サンプル1：音が遅れている動画</button>
+ <button class="sample" id="s2">▶ サンプル2：だんだんずれる動画</button>
+</div>
+<div class="row" style="margin-top:0"><span id="st" class="hint">MP4ファイルを選んでください。手持ちの動画がなくてもサンプルで試せます（サンプル1は音が約500ms遅れていて、オフセット −500ms で合います。サンプル2は時間が進むほどずれが広がるので、速度の調整で合わせます）</span></div>
 <video id="v" muted playsinline></video>
 <audio id="a" preload="auto"></audio>
 <div class="row">
@@ -106,8 +122,8 @@ function startFF(){
 startFF();
 
 /* ---------- 読み込みと波形(8kHzにデコードして高速化) ---------- */
-$('f').onchange=async e=>{
-  file=e.target.files[0]; if(!file)return;
+async function loadFile(nf){
+  file=nf; if(!file)return;
   const url=URL.createObjectURL(file); v.src=url; a.src=url; v.muted=true;
   $('pl').disabled=$('ex').disabled=true; peaks=null;
   await new Promise(r=>v.onloadedmetadata=r); dur=v.duration;
@@ -123,7 +139,23 @@ $('f').onchange=async e=>{
     $('st').textContent=file.name+'('+fmt(dur)+' / 解析'+((Date.now()-t0)/1000).toFixed(1)+'秒)';
   }catch(err){peaks=new Float32Array(Math.ceil(dur*PPS));$('st').textContent='波形を作れませんでした(再生と書き出しは可能)'}
   $('pl').disabled=false; if(ffReady)$('ex').disabled=false; layout(); sync(true);
-};
+}
+$('f').onchange=e=>loadFile(e.target.files[0]);
+async function loadSample(n){
+  $('st').textContent='サンプルを読み込み中…';
+  try{
+    const r=await fetch('samples/sample'+n+'.mp4');
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const b=await r.blob();
+    await loadFile(new File([b],'sample'+n+'.mp4',{type:'video/mp4'}));
+  }catch(err){$('st').textContent='サンプルを読み込めませんでした（'+(err&&err.message||err)+'）'}
+}
+$('s1').onclick=()=>loadSample(1);
+$('s2').onclick=()=>loadSample(2);
+const pickEl=$('pick');
+['dragover','dragenter'].forEach(ev=>pickEl.addEventListener(ev,e=>{e.preventDefault();pickEl.classList.add('drag')}));
+['dragleave','drop'].forEach(ev=>pickEl.addEventListener(ev,e=>{e.preventDefault();pickEl.classList.remove('drag')}));
+pickEl.addEventListener('drop',e=>{const df=e.dataTransfer.files[0];if(df)loadFile(df)});
 
 /* ---------- タイムライン(見えている範囲だけ描画) ---------- */
 function pk(t0,t1){if(!peaks||t1<0)return 0;const i0=Math.max(0,Math.floor(t0*PPS)),i1=Math.min(peaks.length-1,Math.ceil(t1*PPS));let m=0;
